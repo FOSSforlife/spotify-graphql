@@ -4,7 +4,7 @@ sources:
       JsonSchema:
         baseUrl: https://api.spotify.com/v1/
         operationHeaders:
-          Authorization: Bearer {env.TOKEN}
+          Authorization: "Bearer {context.headers['x-token']}"
         operations:
           - type: Query
             field: album
@@ -378,13 +378,13 @@ sources:
           - type: Mutation
             field: playerPause
             method: PUT
-            description: 'Pause a User''s Playback: Pause playback on the user’s account.'
+            description: "Pause a User's Playback: Pause playback on the user’s account."
             path: /me/player/pause
             responseTypeName: Void
           - type: Mutation
             field: playerPauseForDevice
             method: PUT
-            description: 'Pause a User''s Playback: Pause playback on the user’s account.'
+            description: "Pause a User's Playback: Pause playback on the user’s account."
             path: /me/player/pause?device_id={args.device_id}
             responseTypeName: Void
           - type: Mutation
@@ -757,7 +757,7 @@ additionalTypeDefs:
             extend type TrackObject {
               audioFeatures: AudioFeaturesObject!
             }
-            
+
 additionalResolvers:
   - sourceName: Spotify
     sourceTypeName: Query
