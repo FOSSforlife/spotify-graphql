@@ -22,8 +22,23 @@ const schemaToFilePath = (schema: JSONSchema6 | string, fieldName?: string) => {
     fs.writeFileSync(path, JSON.stringify(schema, null, 2))
     return path
   } else {
-    const baseSchema = JSON.parse(fs.readFileSync(baseSchemaPath).toString() || '{}')
-    fs.writeFileSync(baseSchemaPath, JSON.stringify({ ...baseSchema, definitions: { ...(baseSchema.definitions || {}), ...(schema.definitions || {}) } }, null, 2))
+    const baseSchema = JSON.parse(
+      fs.readFileSync(baseSchemaPath).toString() || '{}'
+    )
+    fs.writeFileSync(
+      baseSchemaPath,
+      JSON.stringify(
+        {
+          ...baseSchema,
+          definitions: {
+            ...(baseSchema.definitions || {}),
+            ...(schema.definitions || {}),
+          },
+        },
+        null,
+        2
+      )
+    )
     if (!schema.$ref) {
       console.log(schema.$ref, schema)
     }
@@ -31,73 +46,92 @@ const schemaToFilePath = (schema: JSONSchema6 | string, fieldName?: string) => {
   }
 }
 
-const processOperationDefinition = (file): YamlConfig.JsonSchemaHTTPOperation => {
+const processOperationDefinition = (
+  file
+): YamlConfig.JsonSchemaHTTPOperation => {
   const operation: YamlConfig.JsonSchemaHTTPOperation = require(file).default
   return {
     ...operation,
-    ...(operation.requestTypeName && operation.requestTypeName !== 'Void' ? {
-      requestTypeName: undefined,
-      requestSchema: `${baseSchemaPath}#/definitions/${operation.requestTypeName}`
-    } : {}),
+    ...(operation.requestTypeName && operation.requestTypeName !== 'Void'
+      ? {
+          requestTypeName: undefined,
+          requestSchema: `${baseSchemaPath}#/definitions/${operation.requestTypeName}`,
+        }
+      : {}),
     ...(operation.requestSchema
       ? {
-        requestSchema: schemaToFilePath(
-          operation.requestSchema,
-          operation.field
-        ),
-      }
+          requestSchema: schemaToFilePath(
+            operation.requestSchema,
+            operation.field
+          ),
+        }
       : {}),
-    ...(operation.responseTypeName && operation.responseTypeName !== 'Void' ? {
-      responseTypeName: undefined,
-      responseSchema: `${baseSchemaPath}#/definitions/${operation.responseTypeName}`
-    } : {}),
+    ...(operation.responseTypeName && operation.responseTypeName !== 'Void'
+      ? {
+          responseTypeName: undefined,
+          responseSchema: `${baseSchemaPath}#/definitions/${operation.responseTypeName}`,
+        }
+      : {}),
     ...(operation.responseSchema
       ? {
-        responseSchema: schemaToFilePath(
-          operation.responseSchema,
-          operation.field
-        ),
-      }
+          responseSchema: schemaToFilePath(
+            operation.responseSchema,
+            operation.field
+          ),
+        }
       : {}),
   }
 }
 
 //  "PrivateUserObject.playlists -> Query.mePlaylists"
 //  "AlbumObject{ id }.tracks -> Query.albumTracks(id: id)"
-const processAdditionalResolvers = (sourceName, additionalResolvers: string[]) => additionalResolvers.map(additionalResolver => {
-  if (additionalResolver[0] === '.' || additionalResolver[0] === '/') {
-    // path
-    return additionalResolver
-  } else {
-    const [[targetTypeName, targetFieldName], [sourceTypeName, sourceFieldName]] = additionalResolver.split('->').map(s => s.trim().split('.'))
-    let configuration: any = {
-      sourceName,
-      sourceTypeName,
-      sourceFieldName,
-      targetTypeName,
-      targetFieldName,
-    }
-    // TODO: parsing error handling
-    if (targetTypeName.includes('{') && sourceFieldName.includes('(')) {
-      const [targetTypeNameWithoutSelection, requiredSelectionSet] = targetTypeName.split('{')
-      configuration.requiredSelectionSet = `{${requiredSelectionSet}`
-      configuration.targetTypeName = targetTypeNameWithoutSelection.trim()
-
-      let sourceArgs = {}
-      sourceFieldName.match(/\((.*)\)/)[1].split(',').forEach(keyTuple => {
-        const [argKey, sourceKey] = keyTuple.split(':')
-        sourceArgs[argKey.trim()] = `{root.${sourceKey.trim()}}`
-      })
-
-      configuration.sourceFieldName = sourceFieldName.match(/(.*)\(.*\)/)[1]
-
-      if (sourceArgs) {
-        configuration.sourceArgs = sourceArgs
+const processAdditionalResolvers = (
+  sourceName,
+  additionalResolvers: string[]
+) =>
+  additionalResolvers.map((additionalResolver) => {
+    if (additionalResolver[0] === '.' || additionalResolver[0] === '/') {
+      // path
+      return additionalResolver
+    } else {
+      const [
+        [targetTypeName, targetFieldName],
+        [sourceTypeName, sourceFieldName],
+      ] = additionalResolver.split('->').map((s) => s.trim().split('.'))
+      let configuration: any = {
+        sourceName,
+        sourceTypeName,
+        sourceFieldName,
+        targetTypeName,
+        targetFieldName,
       }
+      // TODO: parsing error handling
+      if (targetTypeName.includes('{') && sourceFieldName.includes('(')) {
+        const [
+          targetTypeNameWithoutSelection,
+          requiredSelectionSet,
+        ] = targetTypeName.split('{')
+        configuration.requiredSelectionSet = `{${requiredSelectionSet}`
+        configuration.targetTypeName = targetTypeNameWithoutSelection.trim()
+
+        let sourceArgs = {}
+        sourceFieldName
+          .match(/\((.*)\)/)[1]
+          .split(',')
+          .forEach((keyTuple) => {
+            const [argKey, sourceKey] = keyTuple.split(':')
+            sourceArgs[argKey.trim()] = `{root.${sourceKey.trim()}}`
+          })
+
+        configuration.sourceFieldName = sourceFieldName.match(/(.*)\(.*\)/)[1]
+
+        if (sourceArgs) {
+          configuration.sourceArgs = sourceArgs
+        }
+      }
+      return configuration
     }
-    return configuration
-  }
-})
+  })
 
 generateBaseSchema(baseSchema)
 
@@ -115,7 +149,7 @@ glob('./schemas/operations/**/*.ts', (err, files) => {
             JsonSchema: {
               baseUrl: 'https://api.spotify.com/v1/',
               operationHeaders: {
-                'Authorization': 'Bearer {env.TOKEN}'
+                Authorization: "Bearer {context.headers['x-token']}",
               },
               operations: operations as YamlConfig.JsonSchemaHTTPOperation[],
             },
@@ -158,30 +192,29 @@ glob('./schemas/operations/**/*.ts', (err, files) => {
         extend type TrackObject {
           audioFeatures: AudioFeaturesObject!
         }
-        `
+        `,
       ],
-      additionalResolvers: processAdditionalResolvers(
-        'Spotify', [
-        "PrivateUserObject.playlists -> Query.mePlaylists",
-        "PrivateUserObject.player -> Query.player",
-        "PrivateUserObject.albums -> Query.meAlbums",
-        "PrivateUserObject.tracks -> Query.meTracks",
-        "PrivateUserObject.topTracks -> Query.meTopTracks",
-        "PrivateUserObject.topArtists -> Query.meTopArtists",
-        "AlbumObject { id }.tracksFull -> Query.albumTracks(id: id)",
-        "ArtistObject { id }.albums -> Query.artistAlbums(id: id)",
-        "ArtistObject { id }.topTracks -> Query.artistTopTracks(id: id)",
-        "ArtistObject { id }.relatedArtists -> Query.artistRelatedArtists(id: id)",
-        "CurrentlyPlayingContextObject.recentlyPlayed -> Query.playerRecentlyPlayed",
-        "CurrentlyPlayingContextObject.devices -> Query.playerDevices",
-        "PrivateUserObject.albumsContains -> Query.meAlbumsContains",
-        "PrivateUserObject.followingArtists -> Query.meFollowingArtists",
-        "PrivateUserObject.shows -> Query.meShows",
-        "PrivateUserObject.showsContains -> Query.meShowsContains",
-        "PrivateUserObject.tracksContains -> Query.meTracksContains",
-        "ShowObject { id }.episodesFull -> Query.showEpisodes(id: id)",
-        "TrackObject { id }.audioFeatures -> Query.trackAudioFeatures(id: id)",
-        "PublicUserObject { id }.playlists -> Query.userPlaylists(user_id: id)"
+      additionalResolvers: processAdditionalResolvers('Spotify', [
+        'PrivateUserObject.playlists -> Query.mePlaylists',
+        'PrivateUserObject.player -> Query.player',
+        'PrivateUserObject.albums -> Query.meAlbums',
+        'PrivateUserObject.tracks -> Query.meTracks',
+        'PrivateUserObject.topTracks -> Query.meTopTracks',
+        'PrivateUserObject.topArtists -> Query.meTopArtists',
+        'AlbumObject { id }.tracksFull -> Query.albumTracks(id: id)',
+        'ArtistObject { id }.albums -> Query.artistAlbums(id: id)',
+        'ArtistObject { id }.topTracks -> Query.artistTopTracks(id: id)',
+        'ArtistObject { id }.relatedArtists -> Query.artistRelatedArtists(id: id)',
+        'CurrentlyPlayingContextObject.recentlyPlayed -> Query.playerRecentlyPlayed',
+        'CurrentlyPlayingContextObject.devices -> Query.playerDevices',
+        'PrivateUserObject.albumsContains -> Query.meAlbumsContains',
+        'PrivateUserObject.followingArtists -> Query.meFollowingArtists',
+        'PrivateUserObject.shows -> Query.meShows',
+        'PrivateUserObject.showsContains -> Query.meShowsContains',
+        'PrivateUserObject.tracksContains -> Query.meTracksContains',
+        'ShowObject { id }.episodesFull -> Query.showEpisodes(id: id)',
+        'TrackObject { id }.audioFeatures -> Query.trackAudioFeatures(id: id)',
+        'PublicUserObject { id }.playlists -> Query.userPlaylists(user_id: id)',
       ]),
       transforms: [
         {
@@ -195,11 +228,11 @@ glob('./schemas/operations/**/*.ts', (err, files) => {
               'Query.!{playlistCoverImages, playlistTracks}',
               'Query.!showEpisodes',
               'Query.!trackAudioFeatures',
-              'Query.!userPlaylists'
-            ]
-          }
-        }
-      ]
+              'Query.!userPlaylists',
+            ],
+          },
+        },
+      ],
     }
 
     const yamlContent = yaml.dump(configuration)
